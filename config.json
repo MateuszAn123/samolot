@@ -1,0 +1,17 @@
+{
+    "cesiumIonToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJmOTUwYzFlZi0yOGQ5LTQwYmUtOGZhZi02NTJhYTk3NTZlZWQiLCJpZCI6NDI3NTYzLCJpc3MiOiJodHRwczovL2lvbi5jZXNpdW0uY29tIiwiYXVkIjoidW5kZWZpbmVkX2RlZmF1bHQiLCJpYXQiOjE3Nzc5OTkwMjZ9.EcC4GRV2Y_yLbPVhbVwysKeBlETn9LoIbzjqlUjFONc",
+    "flight": {
+        "startLongitude": 18.4661,
+        "startLatitude": 54.3775,
+        "startAltitude": 150,
+        "endLongitude": 20.9671,
+        "endLatitude": 52.1657,
+        "endAltitude": 110,
+        "cruiseAltitude": 5000,
+        "durationSeconds": 180
+    },
+    "vehicle": {
+        "modelUri": "plane.glb",
+        "scale": 1
+    }
+}

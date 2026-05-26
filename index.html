@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="utf-8">
+    <title>Cesium Samolot - Symulator Lotu</title>
+    <script src="https://cesium.com/downloads/cesiumjs/releases/1.114/Build/Cesium/Cesium.js"></script>
+    <link href="https://cesium.com/downloads/cesiumjs/releases/1.114/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+    
+    <style>
+        body { margin: 0; padding: 0; overflow: hidden; background-color: #000; }
+        #cesiumContainer { width: 100vw; height: 100vh; }
+    </style>
+</head>
+<body>
+    <div id="cesiumContainer"></div>
+
+    <script>
+        // Pobieranie konfiguracji z zewnętrznego pliku config.json
+        fetch('config.json')
+            .then(response => response.json())
+            .then(config => {
+                
+                Cesium.Ion.defaultAccessToken = config.cesiumIonToken;
+
+                // 1. Inicjalizacja Cesium
+                const viewer = new Cesium.Viewer('cesiumContainer', {
+                    infoBox: false,
+                    selectionIndicator: false,
+                    shouldAnimate: true,
+                    terrain: Cesium.Terrain.fromWorldTerrain(),
+                    baseLayerPicker: false
+                });
+
+                // Odblokowanie pełnej kontroli myszy (scroll, obrót, przybliżanie)
+                viewer.scene.screenSpaceCameraController.enableInputs = true;
+                viewer.scene.screenSpaceCameraController.enableZoom = true;
+                viewer.scene.screenSpaceCameraController.enableRotate = true;
+                viewer.scene.screenSpaceCameraController.enableTilt = true;
+                viewer.scene.screenSpaceCameraController.enableTranslate = true;
+                
+                // Zabezpieczenie przed "wleceniem" kamery do środka kadłuba samolotu
+                viewer.scene.screenSpaceCameraController.minimumZoomDistance = 20;
+
+                // 2. Zarządzanie czasem symulacji
+                const start = Cesium.JulianDate.fromDate(new Date());
+                const stop = Cesium.JulianDate.addSeconds(start, config.flight.durationSeconds, new Cesium.JulianDate());
+
+                viewer.clock.startTime = start;
+                viewer.clock.stopTime = stop;
+                viewer.clock.currentTime = start;
+                viewer.clock.clockRange = Cesium.ClockRange.LOOP_STOP; // Zatrzymaj symulację na końcu trasy
+                viewer.clock.multiplier = 1; // Prędkość czasu rzeczywistego (1s w rzeczywistości = 1s w symulacji)
+
+                // 3. Tworzenie osi czasu pozycji samolotu (SampledPositionProperty)
+                const positionProperty = new Cesium.SampledPositionProperty();
+                
+                // Zastosowanie zaawansowanej interpolacji Hermite'a dla odwzorowania fizyki lotu (gładkie łuki)
+                positionProperty.setInterpolationOptions({
+                    interpolationDegree: 3,
+                    interpolationAlgorithm: Cesium.HermitePolynomialApproximation
+                });
+
+                const f = config.flight;
+                
+                // Obliczanie punktów pośrednich (20% i 80% trasy) do symulacji wznoszenia i opadania
+                const midPointLon1 = f.startLongitude + (f.endLongitude - f.startLongitude) * 0.2;
+                const midPointLat1 = f.startLatitude + (f.endLatitude - f.startLatitude) * 0.2;
+                
+                const midPointLon2 = f.startLongitude + (f.endLongitude - f.startLongitude) * 0.8;
+                const midPointLat2 = f.startLatitude + (f.endLatitude - f.startLatitude) * 0.8;
+
+                // Punkt 1: Start (Gdańsk)
+                positionProperty.addSample(start, Cesium.Cartesian3.fromDegrees(f.startLongitude, f.startLatitude, f.startAltitude));
+                
+                // Punkt 2: Osiągnięcie pułapu przelotowego (Koniec wznoszenia)
+                const timeClimb = Cesium.JulianDate.addSeconds(start, f.durationSeconds * 0.2, new Cesium.JulianDate());
+                positionProperty.addSample(timeClimb, Cesium.Cartesian3.fromDegrees(midPointLon1, midPointLat1, f.cruiseAltitude));
+
+                // Punkt 3: Rozpoczęcie zniżania (Początek schodzenia do lądowania)
+                const timeDescent = Cesium.JulianDate.addSeconds(start, f.durationSeconds * 0.8, new Cesium.JulianDate());
+                positionProperty.addSample(timeDescent, Cesium.Cartesian3.fromDegrees(midPointLon2, midPointLat2, f.cruiseAltitude));
+
+                // Punkt 4: Meta / Lądowanie (Warszawa)
+                positionProperty.addSample(stop, Cesium.Cartesian3.fromDegrees(f.endLongitude, f.endLatitude, f.endAltitude));
+
+                // 4. Dodanie obiektu samolotu do sceny
+                const airplaneEntity = viewer.entities.add({
+                    availability: new Cesium.TimeIntervalCollection([new Cesium.TimeInterval({
+                        start: start,
+                        stop: stop
+                    })]),
+                    position: positionProperty,
+                    // Automatyczna fizyka obrotu: pochylenie i kurs wyliczają się same na podstawie wektora prędkości
+                    orientation: new Cesium.VelocityOrientationProperty(positionProperty),
+                    model: {
+                        uri: config.vehicle.modelUri,
+                        scale: config.vehicle.scale,
+                        minimumPixelSize: 64
+                    },
+                    // Wizualna linia (ścieżka) rysowana za samolotem
+                    path: {
+                        resolution: 1,
+                        material: new Cesium.PolylineGlowMaterialProperty({
+                            glowPower: 0.1,
+                            color: Cesium.Color.YELLOW
+                        }),
+                        width: 5
+                    }
+                });
+
+                // 5. Śledzenie samolotu przez kamerę
+                // Przypisanie obiektu sprawia, że kamera leci za samolotem, pozwalając na swobodne sterowanie myszką wokół niego
+                viewer.trackedEntity = airplaneEntity;
+
+            })
+            .catch(error => console.error('Błąd podczas ładowania pliku config.json:', error));
+    </script>
+</body>
+</html>
