@@ -3,15 +3,15 @@
     "flight": {
         "startLongitude": 18.4661,
         "startLatitude": 54.3775,
-        "startAltitude": 150,
-        "endLongitude": 20.9671,
-        "endLatitude": 52.1657,
-        "endAltitude": 110,
-        "cruiseAltitude": 5000,
-        "durationSeconds": 180
+        "startAltitude": 0,
+        "endLongitude": 18.5215,
+        "endLatitude": 54.5768,
+        "endAltitude": 44,
+        "cruiseAltitude": 500,
+        "durationSeconds": 60
     },
     "vehicle": {
         "modelUri": "plane.glb",
-        "scale": 1
+        "scale": 0.5
     }
 }

@@ -2,118 +2,171 @@
 <html lang="pl">
 <head>
     <meta charset="utf-8">
-    <title>Cesium Samolot - Symulator Lotu</title>
+    <title>Cesium Samolot - Przyspieszenie i Zwalnianie</title>
     <script src="https://cesium.com/downloads/cesiumjs/releases/1.114/Build/Cesium/Cesium.js"></script>
     <link href="https://cesium.com/downloads/cesiumjs/releases/1.114/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
     
     <style>
         body { margin: 0; padding: 0; overflow: hidden; background-color: #000; }
         #cesiumContainer { width: 100vw; height: 100vh; }
+        #telemetry {
+            position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.85);
+            color: #00ff00; font-family: monospace; padding: 15px; font-size: 14px;
+            pointer-events: none; border: 1px solid #00ff00; border-radius: 5px;
+        }
     </style>
 </head>
 <body>
     <div id="cesiumContainer"></div>
+    <div id="telemetry">Inicjalizacja lotu...</div>
 
     <script>
-        // Pobieranie konfiguracji z zewnętrznego pliku config.json
-        fetch('config.json')
+        fetch('config.json?v=' + new Date().getTime())
             .then(response => response.json())
             .then(config => {
                 
                 Cesium.Ion.defaultAccessToken = config.cesiumIonToken;
 
-                // 1. Inicjalizacja Cesium
                 const viewer = new Cesium.Viewer('cesiumContainer', {
-                    infoBox: false,
-                    selectionIndicator: false,
-                    shouldAnimate: true,
-                    terrain: Cesium.Terrain.fromWorldTerrain(),
-                    baseLayerPicker: false
+                    infoBox: false, selectionIndicator: false, shouldAnimate: true,
+                    terrain: Cesium.Terrain.fromWorldTerrain(), baseLayerPicker: false
                 });
 
-                // Odblokowanie pełnej kontroli myszy (scroll, obrót, przybliżanie)
                 viewer.scene.screenSpaceCameraController.enableInputs = true;
-                viewer.scene.screenSpaceCameraController.enableZoom = true;
-                viewer.scene.screenSpaceCameraController.enableRotate = true;
-                viewer.scene.screenSpaceCameraController.enableTilt = true;
-                viewer.scene.screenSpaceCameraController.enableTranslate = true;
-                
-                // Zabezpieczenie przed "wleceniem" kamery do środka kadłuba samolotu
-                viewer.scene.screenSpaceCameraController.minimumZoomDistance = 20;
-
-                // 2. Zarządzanie czasem symulacji
-                const start = Cesium.JulianDate.fromDate(new Date());
-                const stop = Cesium.JulianDate.addSeconds(start, config.flight.durationSeconds, new Cesium.JulianDate());
-
-                viewer.clock.startTime = start;
-                viewer.clock.stopTime = stop;
-                viewer.clock.currentTime = start;
-                viewer.clock.clockRange = Cesium.ClockRange.LOOP_STOP; // Zatrzymaj symulację na końcu trasy
-                viewer.clock.multiplier = 1; // Prędkość czasu rzeczywistego (1s w rzeczywistości = 1s w symulacji)
-
-                // 3. Tworzenie osi czasu pozycji samolotu (SampledPositionProperty)
-                const positionProperty = new Cesium.SampledPositionProperty();
-                
-                // Zastosowanie zaawansowanej interpolacji Hermite'a dla odwzorowania fizyki lotu (gładkie łuki)
-                positionProperty.setInterpolationOptions({
-                    interpolationDegree: 3,
-                    interpolationAlgorithm: Cesium.HermitePolynomialApproximation
-                });
+                viewer.scene.screenSpaceCameraController.minimumZoomDistance = 10;
 
                 const f = config.flight;
-                
-                // Obliczanie punktów pośrednich (20% i 80% trasy) do symulacji wznoszenia i opadania
-                const midPointLon1 = f.startLongitude + (f.endLongitude - f.startLongitude) * 0.2;
-                const midPointLat1 = f.startLatitude + (f.endLatitude - f.startLatitude) * 0.2;
-                
-                const midPointLon2 = f.startLongitude + (f.endLongitude - f.startLongitude) * 0.8;
-                const midPointLat2 = f.startLatitude + (f.endLatitude - f.startLatitude) * 0.8;
 
-                // Punkt 1: Start (Gdańsk)
-                positionProperty.addSample(start, Cesium.Cartesian3.fromDegrees(f.startLongitude, f.startLatitude, f.startAltitude));
-                
-                // Punkt 2: Osiągnięcie pułapu przelotowego (Koniec wznoszenia)
-                const timeClimb = Cesium.JulianDate.addSeconds(start, f.durationSeconds * 0.2, new Cesium.JulianDate());
-                positionProperty.addSample(timeClimb, Cesium.Cartesian3.fromDegrees(midPointLon1, midPointLat1, f.cruiseAltitude));
+                // 1. OBLICZANIE KIERUNKU I ODLEGŁOŚCI
+                const start2D = Cesium.Cartesian3.fromDegrees(f.startLongitude, f.startLatitude, 0);
+                const end2D = Cesium.Cartesian3.fromDegrees(f.endLongitude, f.endLatitude, 0);
+                const totalDistance = Cesium.Cartesian3.distance(start2D, end2D);
 
-                // Punkt 3: Rozpoczęcie zniżania (Początek schodzenia do lądowania)
-                const timeDescent = Cesium.JulianDate.addSeconds(start, f.durationSeconds * 0.8, new Cesium.JulianDate());
-                positionProperty.addSample(timeDescent, Cesium.Cartesian3.fromDegrees(midPointLon2, midPointLat2, f.cruiseAltitude));
+                const lonDiff = Cesium.Math.toRadians(f.endLongitude - f.startLongitude);
+                const lat1 = Cesium.Math.toRadians(f.startLatitude);
+                const lat2 = Cesium.Math.toRadians(f.endLatitude);
+                const y = Math.sin(lonDiff) * Math.cos(lat2);
+                const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(lonDiff);
+                const flightHeading = Math.atan2(y, x); 
 
-                // Punkt 4: Meta / Lądowanie (Warszawa)
-                positionProperty.addSample(stop, Cesium.Cartesian3.fromDegrees(f.endLongitude, f.endLatitude, f.endAltitude));
+                let currentLon = f.startLongitude;
+                let currentLat = f.startLatitude;
+                let currentAlt = f.startAltitude;
 
-                // 4. Dodanie obiektu samolotu do sceny
+                let currentPosition = Cesium.Cartesian3.fromDegrees(currentLon, currentLat, currentAlt);
+                const modelHeadingOffset = Cesium.Math.toRadians(-90); 
+                let currentOrientation = Cesium.Transforms.headingPitchRollQuaternion(
+                    currentPosition, new Cesium.HeadingPitchRoll(flightHeading + modelHeadingOffset, 0, 0)
+                );
+
                 const airplaneEntity = viewer.entities.add({
-                    availability: new Cesium.TimeIntervalCollection([new Cesium.TimeInterval({
-                        start: start,
-                        stop: stop
-                    })]),
-                    position: positionProperty,
-                    // Automatyczna fizyka obrotu: pochylenie i kurs wyliczają się same na podstawie wektora prędkości
-                    orientation: new Cesium.VelocityOrientationProperty(positionProperty),
+                    position: new Cesium.CallbackProperty(() => currentPosition, false),
+                    orientation: new Cesium.CallbackProperty(() => currentOrientation, false),
                     model: {
                         uri: config.vehicle.modelUri,
                         scale: config.vehicle.scale,
                         minimumPixelSize: 64
-                    },
-                    // Wizualna linia (ścieżka) rysowana za samolotem
-                    path: {
-                        resolution: 1,
-                        material: new Cesium.PolylineGlowMaterialProperty({
-                            glowPower: 0.1,
-                            color: Cesium.Color.YELLOW
-                        }),
-                        width: 5
                     }
                 });
 
-                // 5. Śledzenie samolotu przez kamerę
-                // Przypisanie obiektu sprawia, że kamera leci za samolotem, pozwalając na swobodne sterowanie myszką wokół niego
                 viewer.trackedEntity = airplaneEntity;
 
+                // --- 2. GŁÓWNA PĘTLA CZASOWA (Z nową kinematyką) ---
+                let lastTime = viewer.clock.currentTime;
+                let elapsedTime = 0;
+                const totalDuration = f.durationSeconds;
+                const telemetryDiv = document.getElementById('telemetry');
+
+                viewer.scene.preUpdate.addEventListener(function(scene, time) {
+                    const dt = Cesium.JulianDate.secondsDifference(time, lastTime);
+                    lastTime = time.clone();
+
+                    if (dt <= 0 || dt > 0.5) return; 
+
+                    elapsedTime += dt;
+                    
+                    // timeRatio to upływ czasu (od 0.0 do 1.0)
+                    let timeRatio = elapsedTime / totalDuration;
+                    if (timeRatio > 1.0) timeRatio = 1.0; 
+
+                    let progress = 0; // Przebieg trasy od 0.0 do 1.0
+                    let currentSpeedMs = 0; // Prędkość w metrach na sekundę
+                    let speedPhase = "";
+
+                    // FIZYKA KINEMATYCZNA: Ruch jednostajnie przyspieszony i opóźniony
+                    if (timeRatio <= 0.5) {
+                        // PRZYSPIESZANIE (od 0% do 50% czasu trwania)
+                        speedPhase = "PRZYSPIESZANIE";
+                        // Wzór na drogę w ruchu przyspieszonym: s = a*t^2 (tutaj a=2 w skali progresu)
+                        progress = 2 * (timeRatio * timeRatio);
+                        // Prędkość rośnie liniowo
+                        currentSpeedMs = (4 * totalDistance / totalDuration) * timeRatio;
+                    } else {
+                        // ZWALNIANIE (od 50% do 100% czasu trwania)
+                        speedPhase = "ZWALNIANIE";
+                        // Wzór na drogę w ruchu opóźnionym z odwróconą parabolą
+                        progress = 4 * timeRatio - 2 * (timeRatio * timeRatio) - 1;
+                        // Prędkość maleje liniowo
+                        currentSpeedMs = (4 * totalDistance / totalDuration) * (1 - timeRatio);
+                    }
+
+                    // Zabezpieczenie przed przekroczeniem 100% drogi
+                    if (progress > 1.0) {
+                        progress = 1.0;
+                        currentSpeedMs = 0;
+                        speedPhase = "ZATRZYMANY";
+                    }
+
+                    // Dynamiczne czytanie poziomu gruntu
+                    const startGround = viewer.scene.globe.getHeight(Cesium.Cartographic.fromDegrees(f.startLongitude, f.startLatitude)) || f.startAltitude;
+                    const endGround = viewer.scene.globe.getHeight(Cesium.Cartographic.fromDegrees(f.endLongitude, f.endLatitude)) || f.endAltitude;
+                    const peakAltitude = Math.max(startGround, endGround) + f.cruiseAltitude;
+
+                    // Przesuwanie na mapie na podstawie naszego krzywoliniowego postępu drogi
+                    currentLon = f.startLongitude + (f.endLongitude - f.startLongitude) * progress;
+                    currentLat = f.startLatitude + (f.endLatitude - f.startLatitude) * progress;
+
+                    let flightPhase = "";
+
+                    // Profilowanie wysokości (idealny trójkąt sprzężony z dystansem)
+                    if (progress < 0.5) {
+                        flightPhase = "WZNOSZENIE (↑)";
+                        let p = progress / 0.5; 
+                        currentAlt = startGround + p * (peakAltitude - startGround);
+                    } else if (progress < 1.0) {
+                        flightPhase = "OPADANIE (↓)";
+                        let p = (progress - 0.5) / 0.5; 
+                        currentAlt = peakAltitude - p * (peakAltitude - endGround);
+                    } else {
+                        flightPhase = "WYLĄDOWAŁ";
+                        currentAlt = endGround; 
+                    }
+
+                    // Przeliczanie parametrów do wizualizacji
+                    const remainingDistance = totalDistance * (1.0 - progress);
+                    const speedKmh = currentSpeedMs * 3.6;
+
+                    currentPosition = Cesium.Cartesian3.fromDegrees(currentLon, currentLat, currentAlt);
+                    
+                    // Zawsze poziomo (Pitch = 0)
+                    currentOrientation = Cesium.Transforms.headingPitchRollQuaternion(
+                        currentPosition,
+                        new Cesium.HeadingPitchRoll(flightHeading + modelHeadingOffset, 0, 0)
+                    );
+
+                    // Aktualizacja panelu
+                    telemetryDiv.innerHTML = `
+                        STAN SILNIKA: <span style="color: cyan; font-weight: bold;">${speedPhase}</span><br>
+                        FAZA LOTU: <span style="color: white; font-weight: bold;">${flightPhase}</span><br>
+                        CZAS: ${(timeRatio * 100).toFixed(1)} % (${elapsedTime.toFixed(0)}s / ${totalDuration}s)<br>
+                        DO CELU: <span style="color: yellow; font-size: 1.1em; font-weight: bold;">${remainingDistance.toFixed(0)} m</span><br>
+                        -------------------------<br>
+                        PRĘDKOŚĆ: ${speedKmh.toFixed(0)} km/h<br>
+                        WYSOKOŚĆ: ${currentAlt.toFixed(0)} m (npm)<br>
+                    `;
+                });
             })
-            .catch(error => console.error('Błąd podczas ładowania pliku config.json:', error));
+            .catch(error => console.error('Błąd config.json:', error));
     </script>
 </body>
 </html>
