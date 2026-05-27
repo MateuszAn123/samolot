@@ -2,7 +2,7 @@
 <html lang="pl">
 <head>
     <meta charset="utf-8">
-    <title>Plane Symulator</title>
+    <title>Plane Symulator - 900 km/h</title>
     <script src="https://cesium.com/downloads/cesiumjs/releases/1.114/Build/Cesium/Cesium.js"></script>
     <link href="https://cesium.com/downloads/cesiumjs/releases/1.114/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
     
@@ -74,7 +74,12 @@
                 // loop with physics
                 let lastTime = viewer.clock.currentTime;
                 let elapsedTime = 0;
-                const totalDuration = f.durationSeconds;
+                
+
+                const targetMaxSpeedKmh = 900; 
+                const targetMaxSpeedMs = targetMaxSpeedKmh / 3.6; 
+                const totalDuration = (2 * totalDistance) / targetMaxSpeedMs;
+
                 const telemetryDiv = document.getElementById('telemetry');
 
                 viewer.scene.preUpdate.addEventListener(function(scene, time) {
@@ -150,7 +155,7 @@
                     telemetryDiv.innerHTML = `
                         ENGINE: <span style="color: cyan; font-weight: bold;">${speedPhase}</span><br>
                         PHASE: <span style="color: white; font-weight: bold;">${flightPhase}</span><br>
-                        TIME: ${(timeRatio * 100).toFixed(1)} % (${elapsedTime.toFixed(0)}s / ${totalDuration}s)<br>
+                        TIME: ${elapsedTime.toFixed(0)}s / ${totalDuration.toFixed(0)}s<br>
                         TO DESTINATION: <span style="color: yellow; font-size: 1.1em; font-weight: bold;">${remainingDistance.toFixed(0)} m</span><br>
                         -------------------------<br>
                         SPEED: ${speedKmh.toFixed(0)} km/h<br>
@@ -158,7 +163,7 @@
                     `;
                 });
             })
-            .catch(error => console.error('Błąd config.json:', error));
+            .catch(error => console.error('Error config.json:', error));
     </script>
 </body>
 </html>
