@@ -2,7 +2,7 @@
 <html lang="pl">
 <head>
     <meta charset="utf-8">
-    <title>Cesium Samolot - Przyspieszenie i Zwalnianie</title>
+    <title>Plane Symulator</title>
     <script src="https://cesium.com/downloads/cesiumjs/releases/1.114/Build/Cesium/Cesium.js"></script>
     <link href="https://cesium.com/downloads/cesiumjs/releases/1.114/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
     
@@ -37,7 +37,7 @@
 
                 const f = config.flight;
 
-                // 1. OBLICZANIE KIERUNKU I ODLEGŁOŚCI
+                // count distance and flight path
                 const start2D = Cesium.Cartesian3.fromDegrees(f.startLongitude, f.startLatitude, 0);
                 const end2D = Cesium.Cartesian3.fromDegrees(f.endLongitude, f.endLatitude, 0);
                 const totalDistance = Cesium.Cartesian3.distance(start2D, end2D);
@@ -71,7 +71,7 @@
 
                 viewer.trackedEntity = airplaneEntity;
 
-                // --- 2. GŁÓWNA PĘTLA CZASOWA (Z nową kinematyką) ---
+                // loop with physics
                 let lastTime = viewer.clock.currentTime;
                 let elapsedTime = 0;
                 const totalDuration = f.durationSeconds;
@@ -85,7 +85,7 @@
 
                     elapsedTime += dt;
                     
-                    // timeRatio to upływ czasu (od 0.0 do 1.0)
+                    // timeRatio (0s-1s)
                     let timeRatio = elapsedTime / totalDuration;
                     if (timeRatio > 1.0) timeRatio = 1.0; 
 
@@ -93,76 +93,68 @@
                     let currentSpeedMs = 0; // Prędkość w metrach na sekundę
                     let speedPhase = "";
 
-                    // FIZYKA KINEMATYCZNA: Ruch jednostajnie przyspieszony i opóźniony
+                    // PHYSICS
                     if (timeRatio <= 0.5) {
-                        // PRZYSPIESZANIE (od 0% do 50% czasu trwania)
-                        speedPhase = "PRZYSPIESZANIE";
-                        // Wzór na drogę w ruchu przyspieszonym: s = a*t^2 (tutaj a=2 w skali progresu)
+                        speedPhase = "ACCELERATION";
+                        // s = a*t^2 
                         progress = 2 * (timeRatio * timeRatio);
-                        // Prędkość rośnie liniowo
                         currentSpeedMs = (4 * totalDistance / totalDuration) * timeRatio;
                     } else {
-                        // ZWALNIANIE (od 50% do 100% czasu trwania)
-                        speedPhase = "ZWALNIANIE";
-                        // Wzór na drogę w ruchu opóźnionym z odwróconą parabolą
+                        speedPhase = "DECELERATION";
                         progress = 4 * timeRatio - 2 * (timeRatio * timeRatio) - 1;
-                        // Prędkość maleje liniowo
                         currentSpeedMs = (4 * totalDistance / totalDuration) * (1 - timeRatio);
                     }
 
-                    // Zabezpieczenie przed przekroczeniem 100% drogi
                     if (progress > 1.0) {
                         progress = 1.0;
                         currentSpeedMs = 0;
-                        speedPhase = "ZATRZYMANY";
+                        speedPhase = "STOP";
                     }
 
-                    // Dynamiczne czytanie poziomu gruntu
+                    // CALCULATE ALTITUDE
                     const startGround = viewer.scene.globe.getHeight(Cesium.Cartographic.fromDegrees(f.startLongitude, f.startLatitude)) || f.startAltitude;
                     const endGround = viewer.scene.globe.getHeight(Cesium.Cartographic.fromDegrees(f.endLongitude, f.endLatitude)) || f.endAltitude;
                     const peakAltitude = Math.max(startGround, endGround) + f.cruiseAltitude;
 
-                    // Przesuwanie na mapie na podstawie naszego krzywoliniowego postępu drogi
+                    // MOVING ALONG THE PATH
                     currentLon = f.startLongitude + (f.endLongitude - f.startLongitude) * progress;
                     currentLat = f.startLatitude + (f.endLatitude - f.startLatitude) * progress;
 
                     let flightPhase = "";
 
-                    // Profilowanie wysokości (idealny trójkąt sprzężony z dystansem)
                     if (progress < 0.5) {
-                        flightPhase = "WZNOSZENIE (↑)";
+                        flightPhase = "UPPING";
                         let p = progress / 0.5; 
                         currentAlt = startGround + p * (peakAltitude - startGround);
                     } else if (progress < 1.0) {
-                        flightPhase = "OPADANIE (↓)";
+                        flightPhase = "DECREASING";
                         let p = (progress - 0.5) / 0.5; 
                         currentAlt = peakAltitude - p * (peakAltitude - endGround);
                     } else {
-                        flightPhase = "WYLĄDOWAŁ";
+                        flightPhase = "LANDED";
                         currentAlt = endGround; 
                     }
 
-                    // Przeliczanie parametrów do wizualizacji
+                    // CALCULATE REMAINING DISTANCE
                     const remainingDistance = totalDistance * (1.0 - progress);
                     const speedKmh = currentSpeedMs * 3.6;
 
                     currentPosition = Cesium.Cartesian3.fromDegrees(currentLon, currentLat, currentAlt);
                     
-                    // Zawsze poziomo (Pitch = 0)
                     currentOrientation = Cesium.Transforms.headingPitchRollQuaternion(
                         currentPosition,
                         new Cesium.HeadingPitchRoll(flightHeading + modelHeadingOffset, 0, 0)
                     );
 
-                    // Aktualizacja panelu
+                    // PANEL TELEMETRY
                     telemetryDiv.innerHTML = `
-                        STAN SILNIKA: <span style="color: cyan; font-weight: bold;">${speedPhase}</span><br>
-                        FAZA LOTU: <span style="color: white; font-weight: bold;">${flightPhase}</span><br>
-                        CZAS: ${(timeRatio * 100).toFixed(1)} % (${elapsedTime.toFixed(0)}s / ${totalDuration}s)<br>
-                        DO CELU: <span style="color: yellow; font-size: 1.1em; font-weight: bold;">${remainingDistance.toFixed(0)} m</span><br>
+                        ENGINE: <span style="color: cyan; font-weight: bold;">${speedPhase}</span><br>
+                        PHASE: <span style="color: white; font-weight: bold;">${flightPhase}</span><br>
+                        TIME: ${(timeRatio * 100).toFixed(1)} % (${elapsedTime.toFixed(0)}s / ${totalDuration}s)<br>
+                        TO DESTINATION: <span style="color: yellow; font-size: 1.1em; font-weight: bold;">${remainingDistance.toFixed(0)} m</span><br>
                         -------------------------<br>
-                        PRĘDKOŚĆ: ${speedKmh.toFixed(0)} km/h<br>
-                        WYSOKOŚĆ: ${currentAlt.toFixed(0)} m (npm)<br>
+                        SPEED: ${speedKmh.toFixed(0)} km/h<br>
+                        ALTITUDE: ${currentAlt.toFixed(0)} m (npm)<br>
                     `;
                 });
             })
