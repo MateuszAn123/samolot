@@ -6,7 +6,7 @@
         "startAltitude": 0,
         "endLongitude": 18.5215,
         "endLatitude": 54.5768,
-        "endAltitude": 44,
+        "endAltitude": 0,
         "cruiseAltitude": 500,
         "durationSeconds": 60
     },
